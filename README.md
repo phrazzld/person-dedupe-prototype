@@ -28,3 +28,24 @@ adjudications for the seeded data). Set `OPENROUTER_API_KEY` (+ optionally
 3. Verification panel: booking counts conserved, moved records intact,
    audit event linked. Hit **Unmerge** and watch it come back.
 4. **/people/new** — type a seeded email; the inline duplicate warning fires.
+
+## What it looks like
+
+**The report** — ranked by confidence, field signals rendered as chips
+(saturated = strong match, faint = weak, struck-through = counter-signal).
+Expand "Reviewed and believed distinct" to see the Marcus/Danielle Webb
+spouse case sitting at confidence 15 — the system explaining what it
+declined to flag.
+
+![Suggested Duplicates report](docs/screenshots/01-duplicates-report.png)
+
+**Merge preview** — every consequence of the merge stated before it happens:
+which bookings move, which field values change, and that the action is
+reversible.
+
+![Merge preview step](docs/screenshots/02-merge-preview.png)
+
+**Post-merge verification** — booking counts conserved (3 + 2 → 5 ✓), a link
+to the audit event, and Unmerge right there.
+
+![Merge verification panel](docs/screenshots/03-merge-verification.png)
