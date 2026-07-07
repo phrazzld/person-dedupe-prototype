@@ -7,6 +7,13 @@ purchases, etc.). It is deliberately built *outside* the host application: a
 public, self-contained tracer bullet an engineer can read end-to-end and then
 port into the host app with its real tables, auth, and job runner.
 
+This spec is aligned with (and cross-references) the host application's own
+draft PRD for this capability ("the host PRD" — PersonMergeCandidate /
+PersonMerge / master-loser terminology). A terminology map at the end of this
+document makes the correspondence mechanical. Where this prototype deliberately
+diverges from the host PRD, the divergence is called out inline as **[Δ host
+PRD]** with the reason.
+
 The demo evaluation this design serves grades three things:
 
 1. **Detection intelligence** — how smart is the system about what is and
@@ -58,6 +65,7 @@ people
   last_name     text
   email         text nullable
   phone         text nullable          -- stored raw; normalized at compare time
+  date_of_birth text nullable          -- ISO date; blocking key + the strongest distinct-person signal
   address_line  text nullable
   city          text nullable
   region        text nullable          -- state/province
@@ -81,13 +89,19 @@ duplicate_candidates                    -- one row per unordered pair
   id            uuid pk
   person_a_id   uuid fk
   person_b_id   uuid fk                 -- invariant: (a,b) canonically ordered, unique
+  blocking_rules json                   -- which key(s) surfaced the pair (email|phone|plate|name_zip|name_dob|full_name)
   signals       json                    -- [{field, kind: exact|fuzzy|conflict, similarity 0..1, a_value, b_value}]
   det_score     real                    -- deterministic weighted score 0..1
   tier          'certain' | 'likely' | 'ambiguous' | 'weak'
   llm           json nullable           -- {confidence 0..100, verdict: duplicate|distinct_people|unclear,
                                         --  distinct_hypothesis: spouse|parent_child|coincidence|null,
-                                        --  field_weights: {field: strong|moderate|weak|counter}, rationale: <one line>}
-  status        'open' | 'dismissed' | 'merged'
+                                        --  field_weights: {field: strong|moderate|weak|counter}, rationale: <one line>,
+                                        --  model_version: <model id>, scored_at: <ts>}   -- audit/reproducibility
+  bucket        'suggested' | 'review' | 'ignored'   -- derived from final confidence:
+                                        -- >=90 suggested, 60-89 review, <60 ignored (thresholds configurable)
+  status        'open' | 'dismissed' | 'merged'      -- dismissed is terminal: never re-suggested by later
+                                        -- scans (suppression memory); host PRD leaves material-change
+                                        -- reopening as an open question — v1: no
   created_at, updated_at
 
 merge_events                            -- the audit + reversibility spine
@@ -139,8 +153,13 @@ create-person flow. Both share the same code path.
 **2. Candidate generation (blocking).** Never O(n²) pairwise over everything.
 A pair becomes a candidate iff it shares at least one blocking key:
 normalized email | normalized phone | normalized license plate |
-(normalized last_name + postal_code) | (normalized first_name+last_name).
-Union the blocks, dedupe pairs, skip pairs already merged or dismissed.
+(normalized last_name + postal_code) | (normalized full name + date_of_birth) |
+(normalized first_name+last_name).
+Union the blocks, record which rules fired (`blocking_rules`), dedupe pairs,
+skip pairs already merged or dismissed. Blocking is also the scale story:
+cost stays linear in profile count (the "what about our 500k profiles?"
+answer), and **only blocked candidate pairs — never unblocked table data, and
+never free-text notes — are ever sent to the model** (the PII posture).
 
 **3. Deterministic scoring.** Weighted signals per field:
 
@@ -152,8 +171,10 @@ Union the blocks, dedupe pairs, skip pairs already merged or dismissed.
 | full name exact | 0.20 | fuzzy ≥0.85 → 0.12 |
 | address similar | 0.15 | |
 | email alias-equal only | 0.10 | |
+| date_of_birth exact | 0.20 | when both present |
 | **first name conflict** (different given names, similarity <0.5) | **−0.25** | the spouse counter-signal |
-| date-of-overlap oddities (both have bookings same night, different sites) | −0.10 | distinct-people evidence |
+| **date_of_birth conflict** (both present, different) | **−0.30** | strongest distinct-person evidence |
+| independent concurrent activity (both sides hold separate active child records, e.g. bookings same night at different sites) | −0.10 | distinct-people evidence; passed to the LLM as context |
 
 `det_score = clamp(Σ weights, 0, 1)`. Tiers:
 - `certain` ≥ 0.75 **and** no counter-signals → skip LLM, confidence = 95+
@@ -171,18 +192,31 @@ call):
   null), `field_weights` (per-field strong/moderate/weak/counter — this
   drives the UI highlighting), `rationale` (ONE line, ≤120 chars).
 - The canonical case the prompt must handle: same email or phone, different
-  first names, same last name/address → `distinct_people`,
+  first names, different DOBs, same last name/address → `distinct_people`,
   `distinct_hypothesis: spouse`, confidence ≤ 25. (Household members share
   contact info; the host app removed family accounts, so these are
-  legitimately separate profiles.)
+  legitimately separate profiles. Independent active child records on both
+  sides reinforce the distinct verdict.)
+- Every adjudication records `model_version` and `scored_at` on the candidate
+  row — reproducibility and audit. Responses failing schema validation retry
+  once, then the pair is left unscored-pending for the next run — never
+  silently dropped, never silently defaulted.
 - Model: configurable via env (`LLM_MODEL`, default a fast commodity model
   through OpenRouter). **Fixture mode is the default when no API key is
   set**: the seeded candidate pairs carry pre-recorded adjudications
   (`fixtures/adjudications.json`) so the entire demo runs with zero keys,
   zero cost, zero latency. The live path and fixture path produce
-  identical-shaped data.
+  identical-shaped data — which is also the stage-risk answer for a live
+  demo: the run mode is live scoring with the fixture path as an invisible
+  substitution fallback if the model call fails or stalls mid-demo.
+- **[Δ host PRD]** The host PRD sends every blocked pair to the LLM; this
+  design short-circuits the `certain` tier (all-fields-match cases) past the
+  model entirely and drops the `weak` tier. Same external behavior on
+  everything an operator sees, lower cost and latency; the deterministic
+  layer takes the low-hanging fruit and the model judges only what actually
+  needs judgment. Either stance ports cleanly — the seam is identical.
 
-## Surfaces (three, in priority order)
+## Surfaces (four, in priority order)
 
 **1. Suggested Duplicates report** (`/duplicates`) — the primary surface.
 A new page under Reports. Table of open candidate pairs, sorted by
@@ -204,9 +238,23 @@ links to open the existing profile ("Use this instead") and to the
 duplicates report. Creation is never hard-blocked (call-center reality:
 sometimes you really do want a new record). No merging from this surface.
 
-**3. Person-page badge** (stretch, cheap once 1 exists). If this person
+**3. Bulk deduplication (admin).** The report page carries an admin mode for
+batch resolution — this is an explicitly graded demo step, not a stretch
+goal. Behavior: run the org-wide scan, grid sorted by confidence with the
+same field-highlight rendering, checkbox selection with a "select all
+suggested (≥90)" affordance, **Merge selected** executes each merge
+individually with default survivorship (primary = older record, master's
+values win) — one pair's failure never rolls back the batch, and results
+report per-pair (merged ✓ / failed with reason). Each batch merge writes its
+own full merge_event; bulk merges are exactly as auditable and reversible as
+single merges.
+
+**4. Person-page badge** (stretch, cheap once 1 exists). If this person
 appears in any open candidate pair: a banner chip "Possible duplicate —
-review" linking into the report filtered to this person.
+review" linking into the report filtered to this person. A *merged* person's
+page never 404s: it renders a tombstone banner ("merged into Robert Chen on
+Jul 7 — view") resolving through `merged_into` — old-ID lookups always
+resolve to the survivor, which is itself a graded integrity behavior.
 
 ## Merge flow (the star)
 
@@ -218,12 +266,15 @@ From a candidate pair's detail page:
    Sep 3").
 2. **Choose primary.** Explicit radio — no default submission. Copy explains:
    primary survives; secondary is archived into it.
-3. **Resolve conflicts.** For each scalar field where both sides have
-   different non-null values: pick which value wins (defaults to primary's,
-   but every conflict is shown and individually flippable). **There is no
-   silent smart-merge**: unsupported/complex fields are listed plainly as
+3. **Resolve conflicts (survivorship).** For each scalar field where both
+   sides have different non-null values: pick which value wins (defaults to
+   primary's, every conflict shown and individually flippable). Where the
+   primary's field is null and the secondary's isn't, **non-null wins** —
+   the secondary's value fills in by default (shown, flippable). **There is
+   no silent smart-merge**: unsupported/complex fields are listed plainly as
    "kept from primary — merging this field type isn't supported" rather than
-   guessed at.
+   guessed at. After survivorship resolves, uniqueness rules (e.g. email)
+   re-validate against the surviving field set before commit.
 4. **Preview.** One screen stating exactly what will happen: N bookings move
    from secondary to primary (listed); these field values change on primary;
    secondary becomes an archived profile referencing primary; this action is
@@ -246,8 +297,9 @@ detection behavior. The families of cases, each labeled in seed comments:
 2. **Typo'd name** — "Katherine Doyle" / "Kathrine Doyle", same email. → certain/high.
 3. **Nickname** — "Robert Chen" / "Bob Chen", same phone, different emails. → high.
 4. **The spouse trap** — "Marcus Webb" / "Danielle Webb", same email + address,
-   different phones. → distinct_people (spouse), low confidence. **The demo's
-   money shot: the system explains why it's NOT flagging this.**
+   different phones, different DOBs, each with their own active booking. →
+   distinct_people (spouse), low confidence. **The demo's money shot: the
+   system explains why it's NOT flagging this.**
 5. **Same name, different people** — two "James Millers", different everything
    else, different cities. → weak/dropped or low-confidence distinct.
 6. **Address + plate** — same license plate and address, name similarity 0.6
@@ -280,7 +332,9 @@ demo shows real child-record movement and count verification.
   people list, person page, create-person form.
 - API routes mirror what the host app would expose: `POST /api/scan`,
   `GET /api/duplicates`, `POST /api/duplicates/:id/dismiss`,
-  `POST /api/check` (single-record), `POST /api/merge`, `POST /api/merges/:id/unmerge`.
+  `POST /api/check` (single-record), `POST /api/merge`,
+  `POST /api/merge/bulk` (selected pairs, per-pair results),
+  `POST /api/merges/:id/unmerge`.
 - Tests: vitest over normalize/score/candidates (truth tables per seed case
   family) and merge/unmerge invariants (counts conserved, snapshot restore
   exact, post-merge children stay on unmerge). UI is demo-verified by
@@ -299,16 +353,47 @@ demo shows real child-record movement and count verification.
 
 ## Host-app integration notes (handoff)
 
-1. Port order: normalize → score truth tables (bring the tests) → candidates
+1. **Do first (host PRD OQ-6): audit every table referencing the person id**
+   to fix the complete re-parent inventory — bookings, passes, invoices,
+   payments, relationships, roles, communication history, waivers, rentals.
+   An incomplete inventory is THE data-integrity failure mode; this
+   prototype's `moved_children` manifest is per-type for exactly this reason.
+2. Port order: normalize → score truth tables (bring the tests) → candidates
    over real person table with real blocking indexes → merge engine mapped to
-   the real child tables → UI last (patterns transfer, markup won't).
-2. Open questions for the host team, discovered writing this spec:
+   the full child-table inventory → UI last (patterns transfer, markup won't).
+3. Host-specific merge concerns outside this prototype's scope: auth-identity
+   handling (deactivate the loser's login identity; re-point when only the
+   loser has one), a `person.merged` event for downstream caches/analytics,
+   service-layer redirect of old-ID lookups (prototype demonstrates the UX
+   behavior; the host needs it at the data-access layer), and new
+   permissions (merge / merge-bulk / unmerge as distinct grants, unmerge the
+   most restricted).
+4. Open questions for the host team, discovered writing this spec:
    is email-or-phone uniqueness actually enforced at write time? (Affects
-   which seed cases can occur.) Where do archived/tombstoned people surface
-   in existing search? Does any existing table already reference people by
-   natural key (email) rather than id (breaks re-parenting)?
-3. The candidate row's `llm` JSON is deliberately shaped so the UI never
+   which seed cases can occur, and merge-time re-validation.) Where do
+   archived/tombstoned people surface in existing search? Does any existing
+   table reference people by natural key (email) rather than id (breaks
+   re-parenting)?
+5. The candidate row's `llm` JSON is deliberately shaped so the UI never
    needs a live model call — adjudication happens in the pipeline, rendering
-   is pure data. Keep that seam when porting.
-4. Suppression memory (dismissed pairs) must survive re-scans, or operators
+   is pure data. Keep that seam when porting; it is also the stage-risk
+   fallback (cached scores render identically if the live call dies).
+6. Suppression memory (dismissed pairs) must survive re-scans, or operators
    will dismiss the same false positive weekly and stop trusting the page.
+
+## Terminology map (this prototype ↔ host PRD)
+
+| Prototype | Host PRD |
+|---|---|
+| `duplicate_candidates` | `PersonMergeCandidate` |
+| `merge_events` | `PersonMerge` |
+| primary / secondary | master / merged ("loser") |
+| `merged_into` | `MergedIntoPersonId` |
+| `bucket`: suggested / review / ignored | Status: Suggested / Review / Ignored (same 90/60 thresholds) |
+| `status: dismissed` | Status: Dismissed |
+| `snapshot_before` | `LoserSnapshotJson` |
+| `field_decisions` | `SurvivorshipJson` |
+| `moved_children` | `MovedAssetsJson` |
+| `llm.model_version` / `llm.scored_at` | `ModelVersion` / `ScoredAt` |
+| `blocking_rules` | `BlockingRule` |
+| unmerge (`reversed_at`) | Un-merge (Status: Undone) |
