@@ -1,12 +1,13 @@
 // Deterministic weighted scoring. This is the weight table from SPEC.md as code.
 
-import type { Person, Signal, Tier } from './types';
+import type { Person, Signal, Tier, LlmAdjudication, Bucket } from './types';
 import {
   normalizeEmail,
   emailAliasKey,
   normalizePhone,
   normalizeLicensePlate,
   normalizeAddress,
+  normalizeDob,
   trigramSimilarity,
   fullNameSimilarity,
   firstNameSimilarity,
@@ -23,7 +24,9 @@ export const WEIGHTS = {
   fullNameFuzzy: 0.12,
   addressSimilar: 0.15,
   emailAliasOnly: 0.1,
+  dobExact: 0.2,
   firstNameConflict: -0.25,
+  dobConflict: -0.3,
   bookingOverlapOddity: -0.1,
 } as const;
 
@@ -31,6 +34,27 @@ export const ADDRESS_SIMILARITY_THRESHOLD = 0.7;
 
 export const CERTAIN_THRESHOLD = 0.75;
 export const AMBIGUOUS_THRESHOLD = 0.25;
+
+export const SUGGESTED_THRESHOLD = 90;
+export const REVIEW_THRESHOLD = 60;
+
+/** Confidence badge value: LLM confidence when present, else a synthesized 95+ for certain-tier deterministic hits. */
+export function effectiveConfidence(candidate: { tier: Tier; det_score: number; llm: LlmAdjudication | null }): number {
+  if (candidate.llm) return candidate.llm.confidence;
+  if (candidate.tier === 'certain') return Math.min(99, 95 + Math.round(candidate.det_score * 4));
+  return Math.round(candidate.det_score * 100);
+}
+
+/** suggested >=90, review 60-89, ignored <60 (host PRD: Status Suggested/Review/Ignored). */
+export function deriveBucket(
+  confidence: number,
+  suggestedThreshold = SUGGESTED_THRESHOLD,
+  reviewThreshold = REVIEW_THRESHOLD,
+): Bucket {
+  if (confidence >= suggestedThreshold) return 'suggested';
+  if (confidence >= reviewThreshold) return 'review';
+  return 'ignored';
+}
 
 /**
  * True when both people have a booking on the same night at a different
@@ -132,6 +156,30 @@ export function scorePair(a: Person, b: Person, aBookings: Booking[] = [], bBook
         weight: WEIGHTS.addressSimilar,
       });
       total += WEIGHTS.addressSimilar;
+    }
+  }
+
+  // --- date of birth: exact match is a positive signal; a conflict between
+  // two present-but-different DOBs is the strongest distinct-person
+  // evidence there is (no gating on other signals — two different birthdates
+  // means two different people, full stop). ---
+  const dobA = normalizeDob(a.date_of_birth);
+  const dobB = normalizeDob(b.date_of_birth);
+  if (dobA && dobB) {
+    if (dobA === dobB) {
+      signals.push({ field: 'date_of_birth', kind: 'exact', similarity: 1, a_value: a.date_of_birth, b_value: b.date_of_birth, weight: WEIGHTS.dobExact });
+      total += WEIGHTS.dobExact;
+    } else {
+      signals.push({
+        field: 'date_of_birth',
+        kind: 'conflict',
+        similarity: 0,
+        a_value: a.date_of_birth,
+        b_value: b.date_of_birth,
+        weight: WEIGHTS.dobConflict,
+      });
+      total += WEIGHTS.dobConflict;
+      hasCounterSignal = true;
     }
   }
 

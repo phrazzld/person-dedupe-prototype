@@ -55,6 +55,24 @@ describe('score truth table — every seed case family', () => {
     expect(conflict!.weight).toBeLessThan(0);
     const emailSignal = r.signals.find((s) => s.field === 'email');
     expect(emailSignal?.kind).toBe('exact');
+    // different DOBs are the strongest distinct-person signal — a negative-weight conflict
+    const dob = r.signals.find((s) => s.field === 'date_of_birth');
+    expect(dob?.kind).toBe('conflict');
+    expect(dob!.weight).toBeLessThanOrEqual(-0.3);
+  });
+
+  it('date of birth: exact match is a positive signal; differing DOBs are a counter-signal', () => {
+    // case 1's records share a DOB (same person) -> positive exact signal
+    const same = score('case1-a', 'case1-b');
+    const dobSame = same.signals.find((s) => s.field === 'date_of_birth');
+    expect(dobSame?.kind).toBe('exact');
+    expect(dobSame!.weight).toBeGreaterThan(0);
+    // the spouse pair's differing DOBs push the score DOWN, not up
+    const spouse = score('case4-a', 'case4-b');
+    expect(spouse.signals.find((s) => s.field === 'date_of_birth')!.weight).toBeLessThan(0);
+    // a pair where only one side has a DOB produces no DOB signal at all
+    const oneSided = score('case2-a', 'case2-b'); // case2-b has null DOB
+    expect(oneSided.signals.find((s) => s.field === 'date_of_birth')).toBeUndefined();
   });
 
   it('case 5: same name, different people -> weak (dropped)', () => {

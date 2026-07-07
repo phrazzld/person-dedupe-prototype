@@ -8,6 +8,7 @@ const DraftSchema = z.object({
   last_name: z.string().min(1),
   email: z.string().nullable().optional().default(null),
   phone: z.string().nullable().optional().default(null),
+  date_of_birth: z.string().nullable().optional().default(null),
   address_line: z.string().nullable().optional().default(null),
   city: z.string().nullable().optional().default(null),
   region: z.string().nullable().optional().default(null),

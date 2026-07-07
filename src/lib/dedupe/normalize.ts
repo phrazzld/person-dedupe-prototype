@@ -68,6 +68,13 @@ export function normalizeLicensePlate(plate: string | null | undefined): string 
   return cleaned.length ? cleaned : null;
 }
 
+/** Dates are stored as ISO strings already; this just trims and guards empty input. No fuzzy DOB matching — exact or nothing. */
+export function normalizeDob(dob: string | null | undefined): string | null {
+  if (!dob) return null;
+  const trimmed = dob.trim();
+  return trimmed.length ? trimmed : null;
+}
+
 export function normalizePostalCode(postal: string | null | undefined): string | null {
   if (!postal) return null;
   const cleaned = postal.trim().toUpperCase().replace(/\s+/g, '');

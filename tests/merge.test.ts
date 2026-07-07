@@ -35,8 +35,8 @@ function insertBooking(id: string, personId: string) {
 
 function insertCandidate(id: string, aId: string, bId: string) {
   db.prepare(
-    `INSERT INTO duplicate_candidates (id, person_a_id, person_b_id, signals, det_score, tier, llm, status, created_at, updated_at)
-     VALUES (?, ?, ?, '[]', 0.5, 'ambiguous', NULL, 'open', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    `INSERT INTO duplicate_candidates (id, person_a_id, person_b_id, blocking_rules, signals, det_score, tier, llm, bucket, status, created_at, updated_at)
+     VALUES (?, ?, ?, '[]', '[]', 0.5, 'ambiguous', NULL, 'review', 'open', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
   ).run(id, aId, bId);
 }
 

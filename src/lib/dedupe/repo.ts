@@ -4,8 +4,9 @@
 
 import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import type { Person, Booking, DuplicateCandidate, MergeEvent, Signal, LlmAdjudication } from './types';
+import type { Person, Booking, DuplicateCandidate, MergeEvent, Signal, LlmAdjudication, BlockingRule } from './types';
 import { resolveActivePerson } from './merge';
+import { effectiveConfidence } from './score';
 import { checkSingleRecord, type PersonDraft, type SingleCheckMatch } from './pipeline';
 
 function nowIso(): string {
@@ -15,6 +16,7 @@ function nowIso(): string {
 function parseCandidateRow(row: any): DuplicateCandidate {
   return {
     ...row,
+    blocking_rules: JSON.parse(row.blocking_rules ?? '[]') as BlockingRule[],
     signals: JSON.parse(row.signals) as Signal[],
     llm: row.llm ? (JSON.parse(row.llm) as LlmAdjudication) : null,
   };
@@ -59,9 +61,7 @@ export function listOpenCandidates(db: Database.Database): CandidateWithPeople[]
 }
 
 export function confidenceOf(candidate: DuplicateCandidate): number {
-  if (candidate.llm) return candidate.llm.confidence;
-  if (candidate.tier === 'certain') return Math.min(99, 95 + Math.round(candidate.det_score * 4));
-  return Math.round(candidate.det_score * 100);
+  return effectiveConfidence(candidate);
 }
 
 export function getCandidateDetail(db: Database.Database, id: string): CandidateWithPeople | null {
@@ -86,6 +86,8 @@ export function dismissCandidate(db: Database.Database, id: string, verdict: 'di
       distinct_hypothesis: existingLlm?.distinct_hypothesis ?? null,
       field_weights: existingLlm?.field_weights ?? {},
       rationale: existingLlm?.rationale ?? 'Marked not-duplicate by operator.',
+      model_version: 'operator',
+      scored_at: nowIso(),
     };
     db.prepare("UPDATE duplicate_candidates SET status = 'dismissed', llm = ?, updated_at = ? WHERE id = ?").run(
       JSON.stringify(llm),
@@ -158,14 +160,15 @@ export function createPerson(db: Database.Database, draft: PersonDraft): Person 
   const id = uuidv4();
   const now = nowIso();
   db.prepare(
-    `INSERT INTO people (id, first_name, last_name, email, phone, address_line, city, region, postal_code, license_plate, notes, status, merged_into, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'active', NULL, ?, ?)`,
+    `INSERT INTO people (id, first_name, last_name, email, phone, date_of_birth, address_line, city, region, postal_code, license_plate, notes, status, merged_into, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'active', NULL, ?, ?)`,
   ).run(
     id,
     draft.first_name,
     draft.last_name,
     draft.email,
     draft.phone,
+    draft.date_of_birth ?? null,
     draft.address_line,
     draft.city,
     draft.region,

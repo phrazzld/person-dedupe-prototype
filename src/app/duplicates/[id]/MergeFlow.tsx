@@ -11,6 +11,7 @@ const COMPARABLE_FIELDS = [
   'last_name',
   'email',
   'phone',
+  'date_of_birth',
   'address_line',
   'city',
   'region',
@@ -23,6 +24,7 @@ const FIELD_LABELS: Record<string, string> = {
   last_name: 'Last name',
   email: 'Email',
   phone: 'Phone',
+  date_of_birth: 'Date of birth',
   address_line: 'Address',
   city: 'City',
   region: 'Region',
@@ -85,7 +87,15 @@ export function MergeFlow({ initial }: { initial: Initial }) {
   const notesDiffer = primary && secondary ? primary.notes !== secondary.notes : false;
 
   function decisionFor(field: string): 'primary' | 'secondary' {
-    return decisions[field] ?? 'primary';
+    const explicit = decisions[field];
+    if (explicit) return explicit;
+    // Non-null wins by default: if the primary's field is empty and the
+    // secondary's isn't, the secondary's value fills the gap (still
+    // flippable below). Otherwise the primary's value stands.
+    if (primary && secondary && (primary as any)[field] == null && (secondary as any)[field] != null) {
+      return 'secondary';
+    }
+    return 'primary';
   }
 
   async function executeMerge() {
@@ -225,8 +235,8 @@ export function MergeFlow({ initial }: { initial: Initial }) {
         <div className="card" style={{ padding: 20 }}>
           <div className="step-label">Resolve conflicts</div>
           <p style={{ marginTop: 0, color: 'var(--text-muted)', fontSize: 13.5 }}>
-            Every field where the two records disagree is shown below. Defaults to {fullName(primary)}&rsquo;s value —
-            flip any of them.
+            Every field where the two records disagree is shown below. The primary&rsquo;s value wins by default; where the
+            primary&rsquo;s field is empty, the secondary&rsquo;s value fills it (non-null wins). Flip any of them.
           </p>
           {conflicts.length === 0 && <p style={{ fontSize: 13.5 }}>No conflicting fields — every shared field already agrees.</p>}
           {conflicts.map((field) => (

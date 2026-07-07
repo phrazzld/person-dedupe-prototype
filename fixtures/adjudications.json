@@ -3,49 +3,75 @@
     "confidence": 93,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "email": "strong", "full_name": "strong" },
-    "rationale": "Same email, near-identical name — almost certainly a typo."
+    "field_weights": {
+      "email": "strong",
+      "full_name": "strong"
+    },
+    "rationale": "Same email, near-identical name \u2014 almost certainly a typo."
   },
   "case3-a::case3-b": {
     "confidence": 90,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "phone": "strong", "full_name": "moderate" },
-    "rationale": "Same phone; 'Bob' is a common nickname for 'Robert' — same person."
+    "field_weights": {
+      "phone": "strong",
+      "full_name": "moderate"
+    },
+    "rationale": "Same phone; 'Bob' is a common nickname for 'Robert' \u2014 same person."
   },
   "case4-a::case4-b": {
-    "confidence": 15,
+    "confidence": 12,
     "verdict": "distinct_people",
     "distinct_hypothesis": "spouse",
-    "field_weights": { "email": "weak", "address_line": "weak", "first_name": "counter" },
-    "rationale": "Shared email and address but different first names — likely spouses."
+    "field_weights": {
+      "email": "weak",
+      "address_line": "weak",
+      "first_name": "counter",
+      "date_of_birth": "counter"
+    },
+    "rationale": "Different first names and birthdates; shared email/address \u2014 spouses."
   },
   "case6-a::case6-b": {
     "confidence": 82,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "license_plate": "strong", "address_line": "strong", "full_name": "moderate" },
+    "field_weights": {
+      "license_plate": "strong",
+      "address_line": "strong",
+      "full_name": "moderate"
+    },
     "rationale": "Same plate and address; name looks like an abbreviation match."
   },
   "case7-a::case7-b": {
-    "confidence": 85,
+    "confidence": 88,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "email": "moderate", "full_name": "strong" },
-    "rationale": "Same name; email is a plus-addressed alias of the other."
+    "field_weights": {
+      "email": "moderate",
+      "full_name": "strong",
+      "date_of_birth": "strong"
+    },
+    "rationale": "Same name and birthdate; email is a plus-addressed alias."
   },
   "case8-a::case8-b": {
-    "confidence": 78,
+    "confidence": 84,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "email": "strong", "last_name": "weak" },
-    "rationale": "Same email carried across a name change — likely the same person."
+    "field_weights": {
+      "email": "strong",
+      "last_name": "weak",
+      "date_of_birth": "strong"
+    },
+    "rationale": "Same email and birthdate across a surname change \u2014 same person."
   },
   "case8-b::case8-c": {
     "confidence": 88,
     "verdict": "duplicate",
     "distinct_hypothesis": null,
-    "field_weights": { "phone": "strong", "full_name": "strong" },
+    "field_weights": {
+      "phone": "strong",
+      "full_name": "strong"
+    },
     "rationale": "Same phone and name; different email suggests an account update."
   }
 }

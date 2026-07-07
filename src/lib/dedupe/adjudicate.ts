@@ -21,6 +21,7 @@ const COMPARED_FIELDS = [
   'last_name',
   'email',
   'phone',
+  'date_of_birth',
   'address_line',
   'city',
   'region',
@@ -34,7 +35,9 @@ function comparedRecord(p: Person): Record<string, string | null> {
   return out;
 }
 
-const LlmAdjudicationSchema = z.object({
+// The model's response shape. model_version/scored_at are NOT model output —
+// they're stamped locally when results are assembled (audit/reproducibility).
+const LlmResponseSchema = z.object({
   confidence: z.number().min(0).max(100),
   verdict: z.enum(['duplicate', 'distinct_people', 'unclear']),
   distinct_hypothesis: z.enum(['spouse', 'parent_child', 'roommate', 'coincidence']).nullable(),
@@ -42,10 +45,16 @@ const LlmAdjudicationSchema = z.object({
   rationale: z.string().max(120),
 });
 
+type LlmResponse = z.infer<typeof LlmResponseSchema>;
+
+function stamp(response: LlmResponse, modelVersion: string): LlmAdjudication {
+  return { ...response, model_version: modelVersion, scored_at: new Date().toISOString() };
+}
+
 const BatchResponseSchema = z.array(
   z.object({
     pair_key: z.string(),
-    adjudication: LlmAdjudicationSchema,
+    adjudication: LlmResponseSchema,
   }),
 );
 
@@ -69,25 +78,25 @@ function fixturesPath(): string {
   return path.join(process.cwd(), 'fixtures', 'adjudications.json');
 }
 
-function loadFixtures(): Record<string, LlmAdjudication> {
+function loadFixtures(): Record<string, LlmResponse> {
   const raw = fs.readFileSync(fixturesPath(), 'utf-8');
   return JSON.parse(raw);
 }
 
-const FALLBACK_UNCLEAR: LlmAdjudication = {
-  confidence: 50,
-  verdict: 'unclear',
-  distinct_hypothesis: null,
-  field_weights: {},
-  rationale: 'No fixture adjudication recorded for this pair; treated as unclear.',
-};
-
+/**
+ * A pair with no recorded fixture gets NO adjudication — it stays
+ * unscored-pending for a later (live) run, exactly like a live-path schema
+ * failure. Never silently defaulted: an invented "unclear" would render as a
+ * real model verdict in the UI, which is the dishonesty this system is
+ * specifically designed to avoid.
+ */
 function adjudicateFromFixtures(inputs: AdjudicationInput[]): Map<string, LlmAdjudication> {
   const fixtures = loadFixtures();
   const results = new Map<string, LlmAdjudication>();
   for (const input of inputs) {
     const key = pairKey(input.pair);
-    results.set(key, fixtures[key] ?? FALLBACK_UNCLEAR);
+    const fixture = fixtures[key];
+    if (fixture) results.set(key, stamp(fixture, 'fixture'));
   }
   return results;
 }
@@ -172,11 +181,16 @@ async function adjudicateViaOpenRouter(inputs: AdjudicationInput[], apiKey: stri
     }
 
     if (!parsed) {
-      throw new Error(`OpenRouter adjudication failed schema validation after retry: ${String(lastError)}`);
+      // Retry exhausted: leave this batch's pairs unscored-pending — the
+      // scan persists them with llm=null and re-adjudicates on the next
+      // run. Never silently dropped, never silently defaulted; also never
+      // fails the whole scan over one bad batch.
+      console.error(`adjudication batch failed schema validation after retry; ${batch.length} pairs left pending`, lastError);
+      continue;
     }
 
     for (const entry of parsed) {
-      results.set(entry.pair_key, entry.adjudication);
+      results.set(entry.pair_key, stamp(entry.adjudication, model));
     }
   }
 

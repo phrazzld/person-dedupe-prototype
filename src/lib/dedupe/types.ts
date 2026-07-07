@@ -8,6 +8,7 @@ export interface Person {
   last_name: string;
   email: string | null;
   phone: string | null;
+  date_of_birth: string | null; // ISO date; blocking key + strongest distinct-person signal
   address_line: string | null;
   city: string | null;
   region: string | null;
@@ -58,18 +59,26 @@ export interface LlmAdjudication {
   distinct_hypothesis: DistinctHypothesis;
   field_weights: Record<string, FieldWeight>;
   rationale: string; // one line, <=120 chars
+  model_version: string; // e.g. the OpenRouter model id, or "fixture"
+  scored_at: string; // ISO timestamp — reproducibility/audit
 }
 
 export type CandidateStatus = 'open' | 'dismissed' | 'merged';
+
+export type BlockingRule = 'email' | 'phone' | 'plate' | 'name_zip' | 'name_dob' | 'full_name';
+
+export type Bucket = 'suggested' | 'review' | 'ignored';
 
 export interface DuplicateCandidate {
   id: string;
   person_a_id: string;
   person_b_id: string;
+  blocking_rules: BlockingRule[];
   signals: Signal[];
   det_score: number;
   tier: Tier;
   llm: LlmAdjudication | null;
+  bucket: Bucket;
   status: CandidateStatus;
   created_at: string;
   updated_at: string;
@@ -110,6 +119,7 @@ export const COMPARABLE_FIELDS = [
   'last_name',
   'email',
   'phone',
+  'date_of_birth',
   'address_line',
   'city',
   'region',

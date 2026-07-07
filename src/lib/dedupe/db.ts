@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS people (
   last_name     TEXT NOT NULL,
   email         TEXT,
   phone         TEXT,
+  date_of_birth TEXT,
   address_line  TEXT,
   city          TEXT,
   region        TEXT,
@@ -38,16 +39,18 @@ CREATE TABLE IF NOT EXISTS bookings (
 CREATE INDEX IF NOT EXISTS idx_bookings_person ON bookings(person_id);
 
 CREATE TABLE IF NOT EXISTS duplicate_candidates (
-  id           TEXT PRIMARY KEY,
-  person_a_id  TEXT NOT NULL REFERENCES people(id),
-  person_b_id  TEXT NOT NULL REFERENCES people(id),
-  signals      TEXT NOT NULL,
-  det_score    REAL NOT NULL,
-  tier         TEXT NOT NULL CHECK (tier IN ('certain','likely','ambiguous','weak')),
-  llm          TEXT,
-  status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','dismissed','merged')),
-  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  id             TEXT PRIMARY KEY,
+  person_a_id    TEXT NOT NULL REFERENCES people(id),
+  person_b_id    TEXT NOT NULL REFERENCES people(id),
+  blocking_rules TEXT NOT NULL DEFAULT '[]',
+  signals        TEXT NOT NULL,
+  det_score      REAL NOT NULL,
+  tier           TEXT NOT NULL CHECK (tier IN ('certain','likely','ambiguous','weak')),
+  llm            TEXT,
+  bucket         TEXT NOT NULL CHECK (bucket IN ('suggested','review','ignored')),
+  status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','dismissed','merged')),
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(person_a_id, person_b_id)
 );
 

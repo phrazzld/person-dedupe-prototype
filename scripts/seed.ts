@@ -19,8 +19,8 @@ async function main() {
 
   const insertPerson = db.prepare(
     `INSERT INTO people
-      (id, first_name, last_name, email, phone, address_line, city, region, postal_code, license_plate, notes, status, merged_into, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?)`,
+      (id, first_name, last_name, email, phone, date_of_birth, address_line, city, region, postal_code, license_plate, notes, status, merged_into, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?)`,
   );
   const insertBooking = db.prepare(
     `INSERT INTO bookings (id, person_id, site, start_date, end_date, total_cents, status, created_at)
@@ -35,6 +35,7 @@ async function main() {
         p.last_name,
         p.email,
         p.phone,
+        p.date_of_birth,
         p.address_line,
         p.city,
         p.region,

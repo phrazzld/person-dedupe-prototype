@@ -15,6 +15,7 @@ const FIELD_LABELS: Record<string, string> = {
   license_plate: 'Plate',
   full_name: 'Name',
   address_line: 'Address',
+  date_of_birth: 'DOB',
   first_name: 'First name',
   last_name: 'Last name',
   bookings: 'Bookings',

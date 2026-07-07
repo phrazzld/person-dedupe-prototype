@@ -6,6 +6,7 @@ import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import type { Person, FieldDecision, MergeEvent, MergeCounts } from './types';
 import { COMPARABLE_FIELDS } from './types';
+import { normalizeEmail } from './normalize';
 
 export class MergeError extends Error {}
 
@@ -89,6 +90,24 @@ export function mergePeople(db: Database.Database, input: MergeInput): MergeResu
       const setClause = Object.keys(updates).map((f) => `${f} = ?`).join(', ');
       const values = Object.keys(updates).map((f) => updates[f] ?? null);
       db.prepare(`UPDATE people SET ${setClause}, updated_at = ? WHERE id = ?`).run(...values, nowIso(), input.primaryId);
+    }
+
+    // Re-validate uniqueness against the SURVIVING field set: the merged
+    // profile's email must not collide with any other active person (the
+    // secondary is about to be archived, so it doesn't count).
+    const survivingEmail = normalizeEmail(
+      'email' in updates ? (updates['email'] ?? null) : primaryBefore.email,
+    );
+    if (survivingEmail) {
+      const collision = db
+        .prepare("SELECT id, email FROM people WHERE status = 'active' AND id NOT IN (?, ?)")
+        .all(input.primaryId, input.secondaryId) as { id: string; email: string | null }[];
+      const hit = collision.find((p) => normalizeEmail(p.email) === survivingEmail);
+      if (hit) {
+        throw new MergeError(
+          `Surviving email would collide with another active person (${hit.id}); resolve that duplicate first`,
+        );
+      }
     }
 
     // Re-parent secondary's bookings onto primary, capturing exactly which
@@ -187,7 +206,7 @@ export function unmergePeople(db: Database.Database, mergeEventId: string): void
     const restore = (person: Person) => {
       db.prepare(
         `UPDATE people SET
-           first_name = ?, last_name = ?, email = ?, phone = ?, address_line = ?,
+           first_name = ?, last_name = ?, email = ?, phone = ?, date_of_birth = ?, address_line = ?,
            city = ?, region = ?, postal_code = ?, license_plate = ?, notes = ?,
            status = ?, merged_into = ?, updated_at = ?
          WHERE id = ?`,
@@ -196,6 +215,7 @@ export function unmergePeople(db: Database.Database, mergeEventId: string): void
         person.last_name,
         person.email,
         person.phone,
+        person.date_of_birth,
         person.address_line,
         person.city,
         person.region,

@@ -20,32 +20,43 @@ adjudications for the seeded data). Set `OPENROUTER_API_KEY` (+ optionally
 
 ## The 90-second demo
 
-1. **/duplicates** — candidate pairs ranked by confidence; matching fields
+1. **/duplicates** — candidate pairs grouped into confidence buckets
+   (Suggested ≥90 / Needs review 60–89 / low-confidence), matching fields
    highlighted by signal strength; the spouse case sitting in "believed
-   distinct" with a low score (the system explains what it did NOT flag).
+   distinct" at confidence 12 (the system explains what it did NOT flag).
 2. Open the Robert Chen pair → compare view → choose primary → resolve the
    phone conflict → preview (bookings that will move) → **merge**.
 3. Verification panel: booking counts conserved, moved records intact,
    audit event linked. Hit **Unmerge** and watch it come back.
-4. **/people/new** — type a seeded email; the inline duplicate warning fires.
+4. **Bulk**: back on the report, "Select all suggested" → **Merge selected**
+   — each pair merges individually (older record survives), one failure never
+   blocks the rest, every merge audited and reversible.
+5. **/people/new** — type a seeded email; the inline duplicate warning fires.
 
 ## What it looks like
 
-**The report** — ranked by confidence, field signals rendered as chips
-(saturated = strong match, faint = weak, struck-through = counter-signal).
-Expand "Reviewed and believed distinct" to see the Marcus/Danielle Webb
-spouse case sitting at confidence 15 — the system explaining what it
-declined to flag.
+**The report** — grouped by confidence bucket, field signals rendered as
+chips (saturated = strong match, faint = weak, struck-through =
+counter-signal). Expand "Reviewed and believed distinct" to see the
+Marcus/Danielle Webb spouse case sitting at confidence 12 — the system
+explaining what it declined to flag (shared email + address, but different
+first names *and* birthdates).
 
 ![Suggested Duplicates report](docs/screenshots/01-duplicates-report.png)
+
+**Bulk deduplication** — select all suggested pairs and merge the batch in
+one action; each merges individually through the same engine, with per-pair
+results.
+
+![Bulk selection](docs/screenshots/02-bulk-selection.png)
 
 **Merge preview** — every consequence of the merge stated before it happens:
 which bookings move, which field values change, and that the action is
 reversible.
 
-![Merge preview step](docs/screenshots/02-merge-preview.png)
+![Merge preview step](docs/screenshots/03-merge-preview.png)
 
 **Post-merge verification** — booking counts conserved (3 + 2 → 5 ✓), a link
 to the audit event, and Unmerge right there.
 
-![Merge verification panel](docs/screenshots/03-merge-verification.png)
+![Merge verification panel](docs/screenshots/04-merge-verification.png)

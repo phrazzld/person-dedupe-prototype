@@ -598,3 +598,28 @@ input:focus {
   overflow-x: auto;
   white-space: pre-wrap;
 }
+
+/* --- bulk merge bar + bucket headings (spec surface 3) --- */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.bulk-note {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.bucket-heading {
+  font-size: 15px;
+  margin: 22px 0 10px;
+}
+.bucket-heading:first-of-type {
+  margin-top: 0;
+}
+.bucket-count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 13px;
+}

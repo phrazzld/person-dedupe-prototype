@@ -26,7 +26,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         </h1>
         {person.status === 'merged' && resolvedTo && (
           <p style={{ color: 'var(--conf-warm)' }}>
-            This record was merged into{' '}
+            Merged on {person.updated_at.slice(0, 10)} into{' '}
             <Link href={`/people/${resolvedTo.id}`}>
               {resolvedTo.first_name} {resolvedTo.last_name}
             </Link>
@@ -50,6 +50,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <div className="compare-field-label">Phone</div>
           <div className="compare-field-value">{person.phone ?? '—'}</div>
         </div>
+        {person.date_of_birth && (
+          <div className="compare-field">
+            <div className="compare-field-label">Date of birth</div>
+            <div className="compare-field-value">{person.date_of_birth}</div>
+          </div>
+        )}
         <div className="compare-field">
           <div className="compare-field-label">Address</div>
           <div className="compare-field-value">
